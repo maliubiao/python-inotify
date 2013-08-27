@@ -409,7 +409,7 @@ PyMODINIT_FUNC initinotify(void)
 	Py_TYPE(&INOTIFYEVENTtype) = &PyType_Type;
 	if (PyType_Ready(&INOTIFYEVENTtype) < 0)
 		return;
-	m  = Py_InitModule("pyinotify", INOTIFY_methods);
+	m  = Py_InitModule("inotify", INOTIFY_methods);
 	if (m == NULL)
 		return; 
 	Py_INCREF((PyObject *) &INOTIFYEVENTtype);
