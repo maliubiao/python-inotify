@@ -2,7 +2,9 @@
 from distutils.core import setup, Extension
 
 m = Extension('inotify',
-        sources = ['inotify.c'])
+        sources = ['inotify.c'] 
+        )
+
 
 setup(name = 'inotify',
         version = '1.0',

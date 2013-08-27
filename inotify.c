@@ -16,63 +16,33 @@ PyObject *inotify_callback = NULL;
 
 
 /* inotify event object */
-typedef struct {
+struct inotify_event_object {
 	PyObject_HEAD 
 	PyObject *wd;
 	PyObject *mask;
 	PyObject *cookie;
 	PyObject *length;
 	PyObject *name; 
-} INOTIFYEVENTobject;	
+}; 
 
 
-static PyTypeObject INOTIFYEVENTtype; 
 
-
-static int init_inotify()
-{
-	int tmp = 0;
-	if(inotify_fd == 0)	{
-		tmp = inotify_init1(IN_NONBLOCK);	
-		if (tmp > 0) {
-			inotify_fd = tmp;
-			return 0;
-		}
-		return -1;
-	} 
-	return 0; 
-}
-		
-			
-static int init_epoll()
-{
-	int tmp = 0;
-	if(epoll_fd == 0)	{
-		tmp = epoll_create(1);
-		if (tmp > 0) { 
-			epoll_fd = tmp;
-			return 0;
-		}
-		return -1;
-	}
-	return 0; 
-
-}
-
+static PyTypeObject inotify_event_type; 
+	
 
 static int notify_client(struct inotify_event *ie) {
-	INOTIFYEVENTobject *ietmp;
+	struct inotify_event_object *ietmp;
 	PyObject *ietmp_args;
 
-	ietmp = (INOTIFYEVENTobject *)PyObject_New(
-						INOTIFYEVENTobject, 
-						&INOTIFYEVENTtype);
+	ietmp = (struct inotify_event_object *)PyObject_New(
+						struct inotify_event_object, 
+						&inotify_event_type);
 	ietmp->wd = PyInt_FromLong(ie->wd);
 	ietmp->mask = PyInt_FromLong(ie->mask);
 	ietmp->cookie = PyInt_FromLong(ie->cookie);
 	ietmp->length = PyInt_FromLong(ie->len);
 	ietmp->name = PyString_FromString(ie->name);
-	ietmp_args = Py_BuildValue("(O)", ietmp); 
+	ietmp_args = Py_BuildValue("(O)", (PyObject *)ietmp); 
 	PyObject_CallObject(inotify_callback, ietmp_args); 
 	if (PyErr_Occurred()) {
 		return -1;
@@ -111,15 +81,21 @@ inotify_watch(PyObject *object, PyObject *args)
 		return NULL;
 	} 
 
-	if (init_inotify() != 0) {
-		PyErr_SetString(PyExc_RuntimeError,
+	if(inotify_fd == 0) {
+		tmp = inotify_init1(IN_NONBLOCK);	
+		if (tmp > 0) 
+			inotify_fd = tmp;
+		else { 
+			PyErr_SetString(PyExc_RuntimeError,
 				"init inotify instance failed");
 		return NULL;
-	}
-
+		} 
+	} 
+	
 	tmp = inotify_add_watch(inotify_fd, 
 			PyString_AsString(name),
 			PyInt_AsLong(mask));
+
 	if(tmp < 0) {
 		PyErr_SetFromErrno(PyExc_RuntimeError);
 		return NULL; 
@@ -142,14 +118,20 @@ inotify_unwatch(PyObject *object, PyObject *args)
 {
 	int tmp = 0;
 	int wd = 0;
+	
 	if(!PyArg_ParseTuple(args, "i:unwatch", &wd))
-		return NULL;
+		return NULL; 
 
-	if (init_inotify() != 0) {
-		PyErr_SetString(PyExc_RuntimeError,
-				"create inotify instance failed");
+	if(inotify_fd == 0) {
+		tmp = inotify_init1(IN_NONBLOCK);	
+		if (tmp > 0) 
+			inotify_fd = tmp;
+		else { 
+			PyErr_SetString(PyExc_RuntimeError,
+				"init inotify instance failed");
 		return NULL;
-	}
+		} 
+	} 
 
 	tmp = inotify_rm_watch(inotify_fd, wd);	
 	if(tmp < 0) {
@@ -178,10 +160,10 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 	struct epoll_event ev; 
 	PyObject *cb_tmp = NULL;
 	PyObject *extra_tmp = NULL;
-	static char *kwlist[] = {"extra_code", 0};
+	PyObject *extra_args = NULL;
+	//static char *kwlist[] = {"callback", "extra_code", 0};
 
-	if (PyArg_ParseTupleAndKeywords(
-				args, kwargs, "O|O:startloop", kwlist, 
+	if (PyArg_ParseTuple( args, "O|O:startloop",
 				&cb_tmp, &extra_tmp)) {
 				
 		if (!PyCallable_Check(cb_tmp)) {
@@ -202,22 +184,35 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 		Py_XINCREF(cb_tmp);
 		Py_XDECREF(inotify_callback);
 		inotify_callback = cb_tmp;
-	}	
-
-	if (init_inotify() != 0) {
-		PyErr_SetString(PyExc_RuntimeError,
-				"inotify has not been initalized");
-		return NULL;
+	} else {
+		if (PyErr_Occurred()) 
+			return NULL;
 	}
 
+	if(inotify_fd == 0) {
+		tmp = inotify_init1(IN_NONBLOCK);	
+		if (tmp > 0) 
+			inotify_fd = tmp;
+		else { 
+			PyErr_SetString(PyExc_RuntimeError,
+				"init inotify instance failed");
+			return NULL;
+		} 
+	} 
 	ev.events = EPOLLIN;
 	ev.data.fd = inotify_fd;
 
-	if (init_epoll() != 0) {
-		PyErr_SetString(PyExc_RuntimeError, 
+	if(epoll_fd == 0) {
+		tmp = epoll_create(1); 
+		if (tmp > 0) 
+			epoll_fd = tmp;
+		else { 
+			PyErr_SetString(PyExc_RuntimeError,
 				"create epoll instance failed");
 		return NULL;
-	}
+		} 
+	} 
+
 
 	tmp = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, inotify_fd, &ev);
 	if(tmp < 0) {
@@ -248,15 +243,11 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 				return NULL;
 			}
 			if (notify_client((struct inotify_event *)
-					inotify_eb) < 0) {
-				return NULL;
-			}
+					inotify_eb) < 0)  
+					return NULL;
+			
 		} 
-		if (extra_tmp != NULL) {
-			Py_INCREF(Py_None);		
-			PyObject_CallObject(extra_tmp, Py_None);
-			Py_DECREF(Py_None);
-		}
+
 		m = 0;
 		
 	}
@@ -279,7 +270,7 @@ inotify_stoploop(PyObject *object, PyObject *args)
 }
 
 
-static PyMethodDef INOTIFY_methods[] = { 
+static PyMethodDef inotify_methods[] = { 
 	{"watch", (PyCFunction)inotify_watch,
 		METH_VARARGS, inotify_watch_doc},
 	{"unwatch", (PyCFunction)inotify_unwatch,
@@ -292,23 +283,23 @@ static PyMethodDef INOTIFY_methods[] = {
 };
 
 
-static PyMemberDef INOTIFYEVENT_members[] = {
-	{"wd", T_OBJECT, offsetof(INOTIFYEVENTobject, wd),
+static PyMemberDef inotify_event_members[] = {
+	{"wd", T_OBJECT, offsetof(struct inotify_event_object, wd),
 		READONLY, "watch descriptor"},
-	{"mask", T_OBJECT, offsetof(INOTIFYEVENTobject, mask),
+	{"mask", T_OBJECT, offsetof(struct inotify_event_object, mask),
 		READONLY, "event mask"},
-	{"cookie", T_OBJECT, offsetof(INOTIFYEVENTobject, cookie),
+	{"cookie", T_OBJECT, offsetof(struct inotify_event_object, cookie),
 		READONLY, "event signature"},
-	{"length", T_OBJECT, offsetof(INOTIFYEVENTobject, length),
+	{"length", T_OBJECT, offsetof(struct inotify_event_object, length),
 		READONLY, "name length"},
-	{"name", T_OBJECT, offsetof(INOTIFYEVENTobject, name),
+	{"name", T_OBJECT, offsetof(struct inotify_event_object, name),
 		READONLY, "optional name"},
 	{NULL}
 };
 
 
 static void 
-INOTIFYEVENT_dealloc(INOTIFYEVENTobject* self)
+inotify_event_dealloc(struct inotify_event_object* self)
 { 
 	Py_CLEAR(self->wd);
 	Py_CLEAR(self->mask);
@@ -319,10 +310,10 @@ INOTIFYEVENT_dealloc(INOTIFYEVENTobject* self)
 }
 
 static PyObject* 
-INOTIFYEVENT_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+inotify_event_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
-	INOTIFYEVENTobject *self;		
-	self = PyObject_New(INOTIFYEVENTobject, type);
+	struct inotify_event_object *self;		
+	self = PyObject_New(struct inotify_event_object, type);
 	if (!self)
 		return NULL;
 	self->wd = PyInt_FromLong(0);	
@@ -359,13 +350,13 @@ PyDoc_STRVAR(event_doc,
 		
 
 
-static PyTypeObject INOTIFYEVENTtype = {
+static PyTypeObject inotify_event_type = {
 	PyVarObject_HEAD_INIT(NULL, 0)
 	"inotify.event",
-	sizeof(INOTIFYEVENTobject),
+	sizeof(struct inotify_event_object),
 	0,
 	/* methods */
-	(destructor)INOTIFYEVENT_dealloc,	/*tp_dealloc*/
+	(destructor)inotify_event_dealloc,	/*tp_dealloc*/
 	0,			/*tp_print*/
 	0,			/*tp_getattr*/
 	0,			/*tp_setattr*/
@@ -389,7 +380,7 @@ static PyTypeObject INOTIFYEVENTtype = {
 	0,			/*tp_iter*/
 	0,			/*tp_iternext*/
 	0,			/*tp_methods*/
-	INOTIFYEVENT_members,	/*tp_members*/
+	inotify_event_members,	/*tp_members*/
 	0,			/*tp_getset*/
 	0,			/*tp_base*/
 	0,			/*tp_dict*/
@@ -398,7 +389,7 @@ static PyTypeObject INOTIFYEVENTtype = {
 	0,			/*tp_dictoffset*/
 	0,			/*tp_init*/
 	0,			/*tp_alloc*/
-	INOTIFYEVENT_new,	/*tp_new*/
+	inotify_event_new,	/*tp_new*/
 };
 
 
@@ -406,14 +397,14 @@ static PyTypeObject INOTIFYEVENTtype = {
 PyMODINIT_FUNC initinotify(void)
 {
 	PyObject *m;
-	Py_TYPE(&INOTIFYEVENTtype) = &PyType_Type;
-	if (PyType_Ready(&INOTIFYEVENTtype) < 0)
+	Py_TYPE(&inotify_event_type) = &PyType_Type;
+	if (PyType_Ready(&inotify_event_type) < 0)
 		return;
-	m  = Py_InitModule("inotify", INOTIFY_methods);
+	m  = Py_InitModule("inotify", inotify_methods);
 	if (m == NULL)
 		return; 
-	Py_INCREF((PyObject *) &INOTIFYEVENTtype);
-	PyModule_AddObject(m, "event", (PyObject *) &INOTIFYEVENTtype);
+	Py_INCREF((PyObject *) &inotify_event_type);
+	PyModule_AddObject(m, "event", (PyObject *) &inotify_event_type);
 	/*inotify consts*/
 	PyModule_AddObject(m, "IN_ACCESS", PyInt_FromLong(IN_ACCESS));
 	PyModule_AddObject(m, "IN_ATTRIB", PyInt_FromLong(IN_ATTRIB));
