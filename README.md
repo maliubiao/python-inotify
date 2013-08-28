@@ -42,14 +42,14 @@ def print_info(event):
 ``` 
 ## Demo
 ```sh    
-#python test.py    
+python test.py    
 ```
 ## Install
 ### Clone this repo and install it with `python setup.py install`
 ```sh
-#git clone https://github.com/maliubiao/python-inotify.git
-#cd python-inotify
-#sudo python setup.py install
+git clone https://github.com/maliubiao/python-inotify.git
+cd python-inotify
+sudo python setup.py install
 ```
 
 
