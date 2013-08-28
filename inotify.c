@@ -1,5 +1,7 @@
 #include <Python.h> 
 #include <structmember.h>
+#include <errno.h>
+#include <string.h>
 #include <sys/types.h> 
 #include <sys/inotify.h>
 #include <sys/epoll.h>
@@ -13,6 +15,7 @@ int stop_loop = 0;
 void *inotify_eb = NULL; 
 struct epoll_event *epolles = NULL; 
 PyObject *inotify_callback = NULL; 
+
 
 
 /* inotify event object */
@@ -35,7 +38,7 @@ static int notify_client(struct inotify_event *ie) {
 	PyObject *ietmp_args;
 
 	ietmp = (struct inotify_event_object *)PyObject_New(
-						struct inotify_event_object, 
+						struct inotify_event_object,
 						&inotify_event_type);
 	ietmp->wd = PyInt_FromLong(ie->wd);
 	ietmp->mask = PyInt_FromLong(ie->mask);
@@ -55,7 +58,7 @@ static int notify_client(struct inotify_event *ie) {
 
 
 PyDoc_STRVAR(inotify_watch_doc,
-		"add the file yout want to watch, this function accepts"
+		"add the file yout want to watch, this function accepts "
 		"filepath, mask as parameters and  return a "
 		"fd which you can use to identify yout file.)\n");
 
@@ -109,7 +112,7 @@ inotify_watch(PyObject *object, PyObject *args)
 
 
 PyDoc_STRVAR(inotify_unwatch_doc,
-		"stop watching a file,  this function accepts a fd"
+		"stop watching a file,  this function accepts a fd "
 		"as parameter, which is returned by function watch.\n");
 
 
@@ -144,9 +147,9 @@ inotify_unwatch(PyObject *object, PyObject *args)
 
 
 PyDoc_STRVAR(inotify_startloop_doc,
-		"start the mainloop, this function accepts a callable"
-		"object as parameter and return nothing, there is an"
-		"optional parameter extra_code for you to add something"
+		"start the mainloop, this function accepts a callable "
+		"object as parameter and return nothing, there is an "
+		"optional parameter extra_code for you to add something "
 		"to the mainloop, \n");
 
 
@@ -159,16 +162,15 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 	int n = 0;
 	struct epoll_event ev; 
 	PyObject *cb_tmp = NULL;
-	PyObject *extra_tmp = NULL;
-	PyObject *extra_args = NULL;
-	//static char *kwlist[] = {"callback", "extra_code", 0};
+	PyObject *extra_tmp = NULL; 
+	static char *kwlist[] = {"callback", "extra_code", 0};
 
-	if (PyArg_ParseTuple( args, "O|O:startloop",
-				&cb_tmp, &extra_tmp)) {
+	if (PyArg_ParseTupleAndKeywords(args, kwargs, "O|O:startloop",
+				kwlist, &cb_tmp, &extra_tmp)) {
 				
 		if (!PyCallable_Check(cb_tmp)) {
 			PyErr_SetString(PyExc_TypeError,
-					"parameter should be a callable"
+					"parameter should be a callable "
 					"object");
 				return NULL;
 		} 
@@ -184,10 +186,9 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 		Py_XINCREF(cb_tmp);
 		Py_XDECREF(inotify_callback);
 		inotify_callback = cb_tmp;
-	} else {
-		if (PyErr_Occurred()) 
-			return NULL;
-	}
+	} else 
+		return NULL;
+	
 
 	if(inotify_fd == 0) {
 		tmp = inotify_init1(IN_NONBLOCK);	
@@ -209,7 +210,7 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 		else { 
 			PyErr_SetString(PyExc_RuntimeError,
 				"create epoll instance failed");
-		return NULL;
+			return NULL;
 		} 
 	} 
 
@@ -236,16 +237,20 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 			n = read(inotify_fd,
 				inotify_eb,
 				inotifyes);
-			if (n == EAGAIN)
+			if (errno == EAGAIN)
 				continue;
 			if (n < 0) {
 				PyErr_SetFromErrno(PyExc_RuntimeError);
 				return NULL;
 			}
-			if (notify_client((struct inotify_event *)
-					inotify_eb) < 0)  
+			if (notify_client(
+					(struct inotify_event *)
+					inotify_eb) < 0
+					)  
 					return NULL;
-			
+			if (extra_tmp) 
+				PyObject_CallObject(extra_tmp, NULL);
+				
 		} 
 
 		m = 0;
@@ -264,8 +269,6 @@ static PyObject *
 inotify_stoploop(PyObject *object, PyObject *args)
 {
 	stop_loop = 0;
-	close(epoll_fd);
-	epoll_fd = 0; 
 	Py_RETURN_NONE;
 }
 
@@ -276,7 +279,7 @@ static PyMethodDef inotify_methods[] = {
 	{"unwatch", (PyCFunction)inotify_unwatch,
 		METH_VARARGS, inotify_unwatch_doc},
 	{"startloop", (PyCFunction)inotify_startloop,
-		METH_VARARGS, inotify_startloop_doc},
+		METH_VARARGS | METH_KEYWORDS, inotify_startloop_doc},
 	{"stoploop", (PyCFunction)inotify_stoploop,
 		METH_NOARGS, inotify_stoploop_doc},
 	{NULL, NULL, 0, NULL}

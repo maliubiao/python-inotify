@@ -20,18 +20,14 @@ consts = {
         inotify.IN_ISDIR: "Subject of this event is a directory",
         inotify.IN_Q_OVERFLOW: "Event queue overflowed",
         inotify.IN_UNMOUNT: "File system containing watched object was unmounted"
-}
-       
-counter = 1
+} 
+
 def print_info(event): 
     if event.wd in fds.keys():
         print "file:%s\twd:%d\t%s" % (fds[event.wd], event.wd, consts[event.mask] )
 
-def print_hello():
-    print "h"
-
 for file in os.listdir("."): 
     fds[inotify.watch(file, inotify.IN_ALL_EVENTS)] = file 
 
-inotify.startloop(print_info, print_hello)
+inotify.startloop(print_info)
 
