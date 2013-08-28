@@ -10,7 +10,7 @@ python binding of linux inotify
     #! /usr/bin/env python
     import os
     import inotify
-
+    ```python
     fds = {}
     consts = {
         inotify.IN_ACCESS: "File was accessed (read)",
@@ -37,7 +37,7 @@ python binding of linux inotify
         fds[inotify.watch(file, inotify.IN_ALL_EVENTS)] = file 
 
     inotify.startloop(print_info)
-         
+    ``` 
 ## Demo
     
     #python test.py    
