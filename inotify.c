@@ -1,7 +1,7 @@
 #include <Python.h> 
 #include <structmember.h>
 #include <errno.h>
-#include <string.h>
+#include <string.h> 
 #include <sys/types.h> 
 #include <sys/inotify.h>
 #include <sys/epoll.h>
@@ -31,6 +31,7 @@ struct inotify_event_object {
 
 
 static PyTypeObject inotify_event_type; 
+	
 	
 
 static int notify_client(struct inotify_event *ie) {
@@ -99,8 +100,8 @@ inotify_watch(PyObject *object, PyObject *args)
 			PyString_AsString(name),
 			PyInt_AsLong(mask));
 
-	if(tmp < 0) {
-		PyErr_SetFromErrno(PyExc_RuntimeError);
+	if(tmp < 0) { 
+		PyErr_SetFromErrno(PyExc_OSError);
 		return NULL; 
 	}
 
@@ -138,7 +139,7 @@ inotify_unwatch(PyObject *object, PyObject *args)
 
 	tmp = inotify_rm_watch(inotify_fd, wd);	
 	if(tmp < 0) {
-		PyErr_SetFromErrno(PyExc_RuntimeError);
+		PyErr_SetFromErrno(PyExc_OSError);
 		return NULL;
 	} 
 
@@ -163,7 +164,7 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 	struct epoll_event ev; 
 	PyObject *cb_tmp = NULL;
 	PyObject *extra_tmp = NULL; 
-	static char *kwlist[] = {"callback", "extra_code", 0};
+	static char *kwlist[] = {"callback", "extra", 0};
 
 	if (PyArg_ParseTupleAndKeywords(args, kwargs, "O|O:startloop",
 				kwlist, &cb_tmp, &extra_tmp)) {
@@ -195,9 +196,8 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 		if (tmp > 0) 
 			inotify_fd = tmp;
 		else { 
-			PyErr_SetString(PyExc_RuntimeError,
-				"init inotify instance failed");
-			return NULL;
+			PyErr_SetFromErrno(PyExc_OSError);
+			return NULL; 
 		} 
 	} 
 	ev.events = EPOLLIN;
@@ -208,17 +208,17 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 		if (tmp > 0) 
 			epoll_fd = tmp;
 		else { 
-			PyErr_SetString(PyExc_RuntimeError,
-				"create epoll instance failed");
-			return NULL;
+			PyErr_SetFromErrno(PyExc_OSError);
+			return NULL; 
 		} 
 	} 
 
 
 	tmp = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, inotify_fd, &ev);
 	if(tmp < 0) {
-		PyErr_SetFromErrno(PyExc_RuntimeError);
-		return NULL;
+		PyErr_SetFromErrno(PyExc_OSError);
+		return NULL; 
+
 	} 
 	stop_loop = 1;
 
@@ -228,9 +228,9 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 			epoll_fd = 0;
 			Py_RETURN_NONE;
 		}
-		mfds = epoll_wait(epoll_fd, epolles, 10, -1);
+		mfds = epoll_wait(epoll_fd, epolles, 10, 0);
 		if (mfds < 0) {
-			PyErr_SetFromErrno(PyExc_RuntimeError);
+			PyErr_SetFromErrno(PyExc_OSError);
 			return NULL;
 		}
 		for (m; m < mfds; ++m) {
@@ -240,7 +240,7 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 			if (errno == EAGAIN)
 				continue;
 			if (n < 0) {
-				PyErr_SetFromErrno(PyExc_RuntimeError);
+				PyErr_SetFromErrno(PyExc_OSError);
 				return NULL;
 			}
 			if (notify_client(
@@ -248,10 +248,10 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 					inotify_eb) < 0
 					)  
 					return NULL;
-			if (extra_tmp) 
-				PyObject_CallObject(extra_tmp, NULL);
-				
+						
 		} 
+		if (extra_tmp) 
+			PyObject_CallObject(extra_tmp, NULL); 
 
 		m = 0;
 		
@@ -279,7 +279,7 @@ static PyMethodDef inotify_methods[] = {
 	{"unwatch", (PyCFunction)inotify_unwatch,
 		METH_VARARGS, inotify_unwatch_doc},
 	{"startloop", (PyCFunction)inotify_startloop,
-		METH_VARARGS | METH_KEYWORDS, inotify_startloop_doc},
+		METH_VARARGS|METH_KEYWORDS, inotify_startloop_doc},
 	{"stoploop", (PyCFunction)inotify_stoploop,
 		METH_NOARGS, inotify_stoploop_doc},
 	{NULL, NULL, 0, NULL}
@@ -398,8 +398,8 @@ static PyTypeObject inotify_event_type = {
 
 
 PyMODINIT_FUNC initinotify(void)
-{
-	PyObject *m;
+{ 
+	PyObject *m; 
 	Py_TYPE(&inotify_event_type) = &PyType_Type;
 	if (PyType_Ready(&inotify_event_type) < 0)
 		return;
@@ -413,6 +413,7 @@ PyMODINIT_FUNC initinotify(void)
 	PyModule_AddObject(m, "IN_ATTRIB", PyInt_FromLong(IN_ATTRIB));
 	PyModule_AddObject(m, "IN_CREATE", PyInt_FromLong(IN_CREATE));
 	PyModule_AddObject(m, "IN_DELETE", PyInt_FromLong(IN_DELETE));
+	PyModule_AddObject(m, "IN_MOVE", PyInt_FromLong(IN_MOVE)); 
 	PyModule_AddObject(m, "IN_MODIFY", PyInt_FromLong(IN_MODIFY));
 	PyModule_AddObject(m, "IN_MOVE_SELF", PyInt_FromLong(IN_MOVE_SELF));
 	PyModule_AddObject(m, "IN_MOVED_TO", PyInt_FromLong(IN_MOVED_TO));
@@ -423,6 +424,7 @@ PyMODINIT_FUNC initinotify(void)
 	PyModule_AddObject(m, "IN_IGNORED", PyInt_FromLong(IN_IGNORED));
 	PyModule_AddObject(m, "IN_ISDIR", PyInt_FromLong(IN_ISDIR));
 	PyModule_AddObject(m, "IN_UNMOUNT", PyInt_FromLong(IN_UNMOUNT)); 
+	PyModule_AddObject(m, "IN_CLOSE", PyInt_FromLong(IN_CLOSE));
 	PyModule_AddObject(m, "IN_CLOSE_WRITE",
 			PyInt_FromLong(IN_CLOSE_WRITE));
 	PyModule_AddObject(m, "IN_CLOSE_NOWRITE",
@@ -440,9 +442,9 @@ PyMODINIT_FUNC initinotify(void)
 	PyModule_AddObject(m, "IN_Q_OVERFLOW",
 			PyInt_FromLong(IN_Q_OVERFLOW)); 
 
-	/*init module globals*/
+	/*module globals*/
 	inotifyes = sizeof(struct inotify_event) + NAME_MAX + 1; 
-	inotify_eb = PyMem_Malloc(sizeof(char) * inotifyes);
+	inotify_eb = PyMem_Malloc(sizeof(char) * inotifyes); 
 	epolles = PyMem_Malloc(sizeof(struct epoll_event) * 10);
 }
 

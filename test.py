@@ -1,7 +1,9 @@
 #! /usr/bin/env python
 import os
+import signal
 import inotify
 
+i = 0
 fds = {}
 consts = {
         inotify.IN_ACCESS: "File was accessed (read)",
@@ -19,6 +21,10 @@ consts = {
         inotify.IN_IGNORED: "Watch was removed explictily",
         inotify.IN_ISDIR: "Subject of this event is a directory",
         inotify.IN_Q_OVERFLOW: "Event queue overflowed",
+        inotify.IN_UNMOUNT: "File system containing watched object was unmounted",
+        inotify.IN_IGNORED: "Watch was removed explictly or automatically",
+        inotify.IN_ISDIR: "Subject of this event is a directory",
+        inotify.IN_Q_OVERFLOW: "Event queue overflowed",
         inotify.IN_UNMOUNT: "File system containing watched object was unmounted"
 } 
 
@@ -26,8 +32,21 @@ def print_info(event):
     if event.wd in fds.keys():
         print "file:%s\twd:%d\t%s" % (fds[event.wd], event.wd, consts[event.mask] )
 
+def extracode():
+    global i
+    i = i + 1
+    if i > 999999:
+        print "extra code"
+        i = 1
+    
+def handler(signum, frame):
+    print "received SIGINT" 
+    inotify.stoploop()
+    exit(0)
+
 for file in os.listdir("."): 
     fds[inotify.watch(file, inotify.IN_ALL_EVENTS)] = file 
 
-inotify.startloop(print_info)
+signal.signal(signal.SIGINT, handler) 
+inotify.startloop(callback = print_info, extra=extracode)
 

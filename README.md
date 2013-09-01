@@ -1,18 +1,20 @@
 python-inotify
 ==============
-python binding of linux inotify 
+python binding for linux inotify 
 
-* License     :MIT
-
+* License     :MIT 
 
 ## Guide 
-#### monitor all files and directories in current directory
-    #! /usr/bin/env python
-    import os
-    import inotify
+monitor all files and directories in current directory
+```py
+#! /usr/bin/env python
+import os
+import signal
+import inotify
 
-    fds = {}
-    consts = {
+i = 0
+fds = {}
+consts = {
         inotify.IN_ACCESS: "File was accessed (read)",
         inotify.IN_ATTRIB: "Metadata changed ",
         inotify.IN_CLOSE_WRITE: "File opened for writing was closed",
@@ -28,23 +30,40 @@ python binding of linux inotify
         inotify.IN_IGNORED: "Watch was removed explictily",
         inotify.IN_ISDIR: "Subject of this event is a directory",
         inotify.IN_Q_OVERFLOW: "Event queue overflowed",
-        inotify.IN_UNMOUNT: "File system containing watched object was unmounted" } 
-    def print_info(event): 
-        if event.wd in fds.keys():
-            print "file:%s\twd:%d\t%s" % (fds[event.wd], event.wd, consts[event.mask] ) 
+        inotify.IN_UNMOUNT: "File system containing watched object was unmounted",
+        inotify.IN_IGNORED: "Watch was removed explictly or automatically",
+        inotify.IN_ISDIR: "Subject of this event is a directory",
+        inotify.IN_Q_OVERFLOW: "Event queue overflowed",
+        inotify.IN_UNMOUNT: "File system containing watched object was unmounted"
+} 
 
-    for file in os.listdir("."): 
-        fds[inotify.watch(file, inotify.IN_ALL_EVENTS)] = file 
+def print_info(event): 
+    if event.wd in fds.keys():
+        print "file:%s\twd:%d\t%s" % (fds[event.wd], event.wd, consts[event.mask] )
 
-    inotify.startloop(print_info)
-         
+def extracode():
+    global i
+    i = i + 1
+    if i > 999999:
+        print "extra code"
+        i = 1
+    
+def handler(signum, frame):
+    print "received SIGINT" 
+    inotify.stoploop()
+    exit(0)
+
+for file in os.listdir("."): 
+    fds[inotify.watch(file, inotify.IN_ALL_EVENTS)] = file 
+
+signal.signal(signal.SIGINT, handler) 
+inotify.startloop(callback = print_info, extra=extracode)
+```
 ## Demo
     
-    #python test.py    
+    see examples/
 
-## Install
-### Clone this repo and install it with `python setup.py install`
-
+## Install 
     #git clone https://github.com/maliubiao/python-inotify.git
     #cd python-inotify
     #sudo python setup.py install
