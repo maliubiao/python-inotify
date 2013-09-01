@@ -36,11 +36,6 @@ consts = {
         inotify.IN_Q_OVERFLOW: "Event queue overflowed",
         inotify.IN_UNMOUNT: "File system containing watched object was unmounted"
 } 
-
-def print_info(event): 
-    if event.wd in fds.keys():
-        print "file:%s\twd:%d\t%s" % (fds[event.wd], event.wd, consts[event.mask] )
-
 def extracode():
     global i
     i = i + 1
@@ -67,7 +62,4 @@ inotify.startloop(callback = print_info, extra=extracode)
     #git clone https://github.com/maliubiao/python-inotify.git
     #cd python-inotify
     #sudo python setup.py install
-
-
-
 
