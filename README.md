@@ -43,7 +43,11 @@ def handler(signum, frame):
     exit(0)
 signal.signal(signal.SIGINT, handler) 
 
-#this function will be invoked by the mainloop
+def print_info(event): 
+    if event.wd in fds.keys():
+        print("filename:%s\t descriptor:%d\t event:%s\t" % (fds[event.wd], event.wd, consts[event.mask]))
+
+#if you watch add something to the main loop
 def extracode(): 
     global i
     i = i + 1
@@ -55,9 +59,10 @@ for file in os.listdir("."):
 
 inotify.startloop(callback = print_info, extra=extracode)
 ```
+
 ## Demo
     
-    see examples/
+    see examples/ 
 
 ## Install 
     #git clone https://github.com/maliubiao/python-inotify.git
