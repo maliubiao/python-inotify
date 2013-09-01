@@ -10,7 +10,7 @@ monitor all files and directories in current directory
 #! /usr/bin/env python
 import os
 import signal
-import inotify
+import inotify 
 
 i = 0
 fds = {}
@@ -36,22 +36,23 @@ consts = {
         inotify.IN_Q_OVERFLOW: "Event queue overflowed",
         inotify.IN_UNMOUNT: "File system containing watched object was unmounted"
 } 
-def extracode():
+ 
+def handler(signum, frame):
+    print "received SIGINT" 
+    inotify.stoploop()
+    exit(0)
+signal.signal(signal.SIGINT, handler) 
+
+#this function will be invoked by the mainloop
+def extracode(): 
     global i
     i = i + 1
     if i > 999999:
         print "extra code"
         i = 1
-    
-def handler(signum, frame):
-    print "received SIGINT" 
-    inotify.stoploop()
-    exit(0)
-
 for file in os.listdir("."): 
     fds[inotify.watch(file, inotify.IN_ALL_EVENTS)] = file 
 
-signal.signal(signal.SIGINT, handler) 
 inotify.startloop(callback = print_info, extra=extracode)
 ```
 ## Demo
