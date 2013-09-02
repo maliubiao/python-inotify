@@ -47,7 +47,7 @@ def print_info(event):
     if event.wd in fds.keys():
         print("filename:%s\t descriptor:%d\t event:%s\t" % (fds[event.wd], event.wd, consts[event.mask]))
 
-#if you add something to the main loop
+#if you want to add something to the main loop
 def extracode(): 
     global i
     i = i + 1
