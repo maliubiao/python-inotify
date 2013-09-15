@@ -8,14 +8,13 @@
 
 
 /* module globals */
+struct epoll_event *epoll_event = NULL; 
 int inotify_fd = 0;
 int epoll_fd = 0; 
-int inotifyes = 0; 
-int stop_loop = 0;
-void *inotify_eb = NULL; 
-struct epoll_event *epolles = NULL; 
-PyObject *inotify_callback = NULL; 
-
+int event_size = 0; 
+void *inotify_buffer = NULL; 
+int stoploop = 0; 
+PyObject *notify_callback = NULL; 
 
 
 /* inotify event object */
@@ -34,25 +33,32 @@ static PyTypeObject inotify_event_type;
 	
 	
 
-static int notify_client(struct inotify_event *ie) {
+static int notify_client(struct inotify_event *ie)
+{
 	struct inotify_event_object *ietmp;
 	PyObject *ietmp_args;
 
-	ietmp = (struct inotify_event_object *)PyObject_New(
-						struct inotify_event_object,
-						&inotify_event_type);
-	ietmp->wd = PyInt_FromLong(ie->wd);
-	ietmp->mask = PyInt_FromLong(ie->mask);
+	ietmp = (struct inotify_event_object *)
+		PyObject_New(
+			struct inotify_event_object,&inotify_event_type
+		);
+
 	ietmp->cookie = PyInt_FromLong(ie->cookie);
+	ietmp->wd = PyInt_FromLong(ie->wd); 
+	ietmp->mask = PyInt_FromLong(ie->mask); 
 	ietmp->length = PyInt_FromLong(ie->len);
-	ietmp->name = PyString_FromString(ie->name);
+	ietmp->name = PyString_FromString(ie->name); 
+
 	ietmp_args = Py_BuildValue("(O)", (PyObject *)ietmp); 
-	PyObject_CallObject(inotify_callback, ietmp_args); 
+	PyObject_CallObject(notify_callback, ietmp_args); 
+
+	Py_DECREF(ietmp);
+	Py_DECREF(ietmp_args); 
+
 	if (PyErr_Occurred()) {
 		return -1;
 	}
-	Py_DECREF(ietmp_args); 
-	Py_DECREF(ietmp);
+
 	return 0;
 
 }
@@ -87,12 +93,12 @@ inotify_watch(PyObject *object, PyObject *args)
 
 	if(inotify_fd == 0) {
 		tmp = inotify_init1(IN_NONBLOCK);	
-		if (tmp > 0) 
+		if (tmp > 0) {
 			inotify_fd = tmp;
-		else { 
+		} else { 
 			PyErr_SetString(PyExc_RuntimeError,
 				"init inotify instance failed");
-		return NULL;
+			return NULL;
 		} 
 	} 
 	
@@ -128,12 +134,13 @@ inotify_unwatch(PyObject *object, PyObject *args)
 
 	if(inotify_fd == 0) {
 		tmp = inotify_init1(IN_NONBLOCK);	
-		if (tmp > 0) 
+		if (tmp > 0) {
 			inotify_fd = tmp;
+		}
 		else { 
 			PyErr_SetString(PyExc_RuntimeError,
 				"init inotify instance failed");
-		return NULL;
+			return NULL;
 		} 
 	} 
 
@@ -159,8 +166,8 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 {
 	int tmp = 0;
 	int mfds = 0;
-	int m = 0;
-	int n = 0;
+	int m;
+	int n=0;
 	struct epoll_event ev; 
 	PyObject *cb_tmp = NULL;
 	PyObject *extra_tmp = NULL; 
@@ -173,28 +180,30 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 			PyErr_SetString(PyExc_TypeError,
 					"parameter should be a callable "
 					"object");
-				return NULL;
+			return NULL;
 		} 
 		if (extra_tmp != NULL) {
 			if (!PyCallable_Check(extra_tmp)) {
 				PyErr_SetString(PyExc_TypeError, 
 						"extra_code should be "
 						"a callable object");
-					return NULL;
+				return NULL;
 			}
 		}
 
 		Py_XINCREF(cb_tmp);
-		Py_XDECREF(inotify_callback);
-		inotify_callback = cb_tmp;
-	} else 
+		Py_XDECREF(notify_callback);
+		notify_callback = cb_tmp;
+	} else {
 		return NULL;
+	}
 	
 
 	if(inotify_fd == 0) {
 		tmp = inotify_init1(IN_NONBLOCK);	
-		if (tmp > 0) 
+		if (tmp > 0) {
 			inotify_fd = tmp;
+		}
 		else { 
 			PyErr_SetFromErrno(PyExc_OSError);
 			return NULL; 
@@ -205,8 +214,9 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 
 	if(epoll_fd == 0) {
 		tmp = epoll_create(1); 
-		if (tmp > 0) 
+		if (tmp > 0) { 
 			epoll_fd = tmp;
+		}
 		else { 
 			PyErr_SetFromErrno(PyExc_OSError);
 			return NULL; 
@@ -220,23 +230,21 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 		return NULL; 
 
 	} 
-	stop_loop = 1;
+	stoploop = 1;
 
-	for (;;) {
-		if (stop_loop == 0) {
+	while(1) {
+		if (stoploop == 0) {
 			close(epoll_fd);
 			epoll_fd = 0;
 			Py_RETURN_NONE;
 		}
-		mfds = epoll_wait(epoll_fd, epolles, 10, 0);
+		mfds = epoll_wait(epoll_fd, epoll_event, 10, 0);
 		if (mfds < 0) {
 			PyErr_SetFromErrno(PyExc_OSError);
 			return NULL;
 		}
-		for (m; m < mfds; ++m) {
-			n = read(inotify_fd,
-				inotify_eb,
-				inotifyes);
+		for (m=0; m < mfds; ++m) {
+			n = read(inotify_fd, inotify_buffer, event_size);
 			if (errno == EAGAIN)
 				continue;
 			if (n < 0) {
@@ -244,10 +252,10 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 				return NULL;
 			}
 			if (notify_client(
-					(struct inotify_event *)
-					inotify_eb) < 0
-					)  
-					return NULL;
+				(struct inotify_event *)inotify_buffer) < 0)
+			{
+				return NULL;
+			}	
 						
 		} 
 		if (extra_tmp) 
@@ -268,33 +276,33 @@ PyDoc_STRVAR(inotify_stoploop_doc,
 static PyObject *
 inotify_stoploop(PyObject *object, PyObject *args)
 {
-	stop_loop = 0;
+	stoploop = 0;
 	Py_RETURN_NONE;
 }
 
 
 static PyMethodDef inotify_methods[] = { 
+	{"startloop", (PyCFunction)inotify_startloop,
+		METH_VARARGS|METH_KEYWORDS, inotify_startloop_doc}, 
+	{"stoploop", (PyCFunction)inotify_stoploop,
+		METH_NOARGS, inotify_stoploop_doc},
 	{"watch", (PyCFunction)inotify_watch,
 		METH_VARARGS, inotify_watch_doc},
 	{"unwatch", (PyCFunction)inotify_unwatch,
 		METH_VARARGS, inotify_unwatch_doc},
-	{"startloop", (PyCFunction)inotify_startloop,
-		METH_VARARGS|METH_KEYWORDS, inotify_startloop_doc},
-	{"stoploop", (PyCFunction)inotify_stoploop,
-		METH_NOARGS, inotify_stoploop_doc},
 	{NULL, NULL, 0, NULL}
 };
 
 
-static PyMemberDef inotify_event_members[] = {
+static PyMemberDef inotify_event_members[] = { 
+	{"cookie", T_OBJECT, offsetof(struct inotify_event_object, cookie),
+		READONLY, "event signature"}, 
+	{"length", T_OBJECT, offsetof(struct inotify_event_object, length),
+		READONLY, "name length"},
 	{"wd", T_OBJECT, offsetof(struct inotify_event_object, wd),
 		READONLY, "watch descriptor"},
 	{"mask", T_OBJECT, offsetof(struct inotify_event_object, mask),
 		READONLY, "event mask"},
-	{"cookie", T_OBJECT, offsetof(struct inotify_event_object, cookie),
-		READONLY, "event signature"},
-	{"length", T_OBJECT, offsetof(struct inotify_event_object, length),
-		READONLY, "name length"},
 	{"name", T_OBJECT, offsetof(struct inotify_event_object, name),
 		READONLY, "optional name"},
 	{NULL}
@@ -304,10 +312,10 @@ static PyMemberDef inotify_event_members[] = {
 static void 
 inotify_event_dealloc(struct inotify_event_object* self)
 { 
+	Py_CLEAR(self->cookie);
+	Py_CLEAR(self->length); 
 	Py_CLEAR(self->wd);
 	Py_CLEAR(self->mask);
-	Py_CLEAR(self->cookie);
-	Py_CLEAR(self->length);
 	Py_CLEAR(self->name);
 	PyObject_Del(self);
 }
@@ -317,9 +325,12 @@ inotify_event_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
 	struct inotify_event_object *self;		
 	self = PyObject_New(struct inotify_event_object, type);
+
 	if (!self)
 		return NULL;
+
 	self->wd = PyInt_FromLong(0);	
+
 	if (!self->wd) {
 		Py_DECREF(self);
 		return NULL;
@@ -344,6 +355,7 @@ inotify_event_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 		Py_DECREF(self);
 		return NULL;
 	} 
+
 	return (PyObject *)self;
 }
 
@@ -443,9 +455,7 @@ PyMODINIT_FUNC initinotify(void)
 			PyInt_FromLong(IN_Q_OVERFLOW)); 
 
 	/*module globals*/
-	inotifyes = sizeof(struct inotify_event) + NAME_MAX + 1; 
-	inotify_eb = PyMem_Malloc(sizeof(char) * inotifyes); 
-	epolles = PyMem_Malloc(sizeof(struct epoll_event) * 10);
+	event_size = sizeof(struct inotify_event) + NAME_MAX + 1; 
+	inotify_buffer = PyMem_Malloc(sizeof(char) * event_size); 
+	epoll_event = PyMem_Malloc(sizeof(struct epoll_event) * 10);
 }
-
-
