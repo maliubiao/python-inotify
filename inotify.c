@@ -35,25 +35,24 @@ static PyTypeObject inotify_event_type;
 
 static int notify_client(struct inotify_event *ie)
 {
-	struct inotify_event_object *ietmp;
-	PyObject *ietmp_args;
+	struct inotify_event_object *ieo;
+	PyObject *cbargs;
 
-	ietmp = (struct inotify_event_object *)
-		PyObject_New(
-			struct inotify_event_object,&inotify_event_type
+	ieo = (struct inotify_event_object *)PyObject_New(
+			struct inotify_event_object, &inotify_event_type
 		);
 
-	ietmp->cookie = PyInt_FromLong(ie->cookie);
-	ietmp->wd = PyInt_FromLong(ie->wd); 
-	ietmp->mask = PyInt_FromLong(ie->mask); 
-	ietmp->length = PyInt_FromLong(ie->len);
-	ietmp->name = PyString_FromString(ie->name); 
+	ieo->cookie = PyInt_FromLong(ie->cookie);
+	ieo->wd = PyInt_FromLong(ie->wd); 
+	ieo->mask = PyInt_FromLong(ie->mask); 
+	ieo->length = PyInt_FromLong(ie->len);
+	ieo->name = PyString_FromString(ie->name); 
 
-	ietmp_args = Py_BuildValue("(O)", (PyObject *)ietmp); 
-	PyObject_CallObject(notify_callback, ietmp_args); 
+	cbargs = Py_BuildValue("(O)", (PyObject *)ieo); 
+	PyObject_CallObject(notify_callback, cbargs); 
 
-	Py_DECREF(ietmp);
-	Py_DECREF(ietmp_args); 
+	Py_DECREF(ieo);
+	Py_DECREF(cbargs); 
 
 	if (PyErr_Occurred()) {
 		return -1;
@@ -169,21 +168,21 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 	int m;
 	int n=0;
 	struct epoll_event ev; 
-	PyObject *cb_tmp = NULL;
-	PyObject *extra_tmp = NULL; 
+	PyObject *cb = NULL;
+	PyObject *extra = NULL; 
 	static char *kwlist[] = {"callback", "extra", 0};
 
 	if (PyArg_ParseTupleAndKeywords(args, kwargs, "O|O:startloop",
-				kwlist, &cb_tmp, &extra_tmp)) {
+				kwlist, &cb, &extra)) {
 				
-		if (!PyCallable_Check(cb_tmp)) {
+		if (!PyCallable_Check(cb)) {
 			PyErr_SetString(PyExc_TypeError,
 					"parameter should be a callable "
 					"object");
 			return NULL;
 		} 
-		if (extra_tmp != NULL) {
-			if (!PyCallable_Check(extra_tmp)) {
+		if (extra != NULL) {
+			if (!PyCallable_Check(extra)) {
 				PyErr_SetString(PyExc_TypeError, 
 						"extra_code should be "
 						"a callable object");
@@ -191,9 +190,9 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 			}
 		}
 
-		Py_XINCREF(cb_tmp);
+		Py_XINCREF(cb);
 		Py_XDECREF(notify_callback);
-		notify_callback = cb_tmp;
+		notify_callback = cb;
 	} else {
 		return NULL;
 	}
@@ -251,15 +250,16 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 				PyErr_SetFromErrno(PyExc_OSError);
 				return NULL;
 			}
-			if (notify_client(
-				(struct inotify_event *)inotify_buffer) < 0)
-			{
+			if (notify_client((struct inotify_event *)\
+						inotify_buffer) < 0\
+					) {
 				return NULL;
 			}	
 						
 		} 
-		if (extra_tmp) 
-			PyObject_CallObject(extra_tmp, NULL); 
+
+		if (extra) 
+			PyObject_CallObject(extra, NULL); 
 
 		m = 0;
 		
