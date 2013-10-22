@@ -2,6 +2,7 @@
 #include <structmember.h>
 #include <errno.h>
 #include <string.h> 
+#include <time.h>
 #include <sys/types.h> 
 #include <sys/inotify.h>
 #include <sys/epoll.h>
@@ -170,6 +171,9 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 	struct epoll_event ev; 
 	PyObject *cb = NULL;
 	PyObject *extra = NULL; 
+	struct timespec req;
+	req.tv_sec = 0;
+	req.tv_nsec = 100000; //100ms
 	static char *kwlist[] = {"callback", "extra", 0};
 
 	if (PyArg_ParseTupleAndKeywords(args, kwargs, "O|O:startloop",
@@ -237,7 +241,7 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 			epoll_fd = 0;
 			Py_RETURN_NONE;
 		}
-		mfds = epoll_wait(epoll_fd, epoll_event, 10, 0);
+		mfds = epoll_wait(epoll_fd, epoll_event, 10, 10);
 		if (mfds < 0) {
 			PyErr_SetFromErrno(PyExc_OSError);
 			return NULL;
@@ -262,6 +266,7 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 			PyObject_CallObject(extra, NULL); 
 
 		m = 0;
+		nanosleep(&req, NULL);
 		
 	}
 	Py_RETURN_TRUE;
@@ -277,6 +282,10 @@ static PyObject *
 inotify_stoploop(PyObject *object, PyObject *args)
 {
 	stoploop = 0;
+	close(epoll_fd);
+	close(inotify_fd);
+	epoll_fd = 0;
+	inotify_fd = 0; 
 	Py_RETURN_NONE;
 }
 
