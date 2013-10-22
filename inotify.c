@@ -259,7 +259,6 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 					) {
 				return NULL;
 			}	
-						
 		} 
 
 		if (extra) 
