@@ -6,13 +6,12 @@ python binding for linux inotify
 
 ## Guide 
 monitor all files and directories in current directory
-```py
+```py 
 #! /usr/bin/env python
 import os
 import signal
-import inotify 
+import inotify
 
-i = 0
 fds = {}
 consts = {
         inotify.IN_ACCESS: "File was accessed (read)",
@@ -36,31 +35,38 @@ consts = {
         inotify.IN_Q_OVERFLOW: "Event queue overflowed",
         inotify.IN_UNMOUNT: "File system containing watched object was unmounted"
 } 
- 
-def handler(signum, frame):
+
+def print_info(event): 
+    if event.mask not in event:
+        return
+    else:
+        print "ignore event", event.mask 
+    if event.wd in fds:
+        print "file:%s\twd:%d\t%s" % (fds[event.wd], event.wd, consts[event.mask] )
+
+#if you want to add something to the mainloop
+def extracode():
+    pass   
+
+
+def handler(signum, frame): 
     print "received SIGINT" 
     inotify.stoploop()
     exit(0)
+
 signal.signal(signal.SIGINT, handler) 
 
-def print_info(event): 
-    if event.wd in fds.keys():
-        print("filename:%s\t descriptor:%d\t event:%s\t" % (fds[event.wd], event.wd, consts[event.mask]))
-
-#if you want to add something to the main loop
-def extracode(): 
-    global i
-    i = i + 1
-    if i > 999999:
-        print "extra code"
-        i = 1
+#watch all files in current directory.
 for file in os.listdir("."): 
     fds[inotify.watch(file, inotify.IN_ALL_EVENTS)] = file 
+
+#print pid
+print os.getpid()
 
 inotify.startloop(callback = print_info, extra=extracode)
 ```
 
-## Demo
+## Examples
     
     see examples/ 
 

@@ -3,7 +3,6 @@ import os
 import signal
 import inotify
 
-i = 0
 fds = {}
 consts = {
         inotify.IN_ACCESS: "File was accessed (read)",
@@ -29,24 +28,31 @@ consts = {
 } 
 
 def print_info(event): 
-    if event.wd in fds.keys():
+    if event.mask not in event:
+        return
+    else:
+        print "ignore event", event.mask 
+    if event.wd in fds:
         print "file:%s\twd:%d\t%s" % (fds[event.wd], event.wd, consts[event.mask] )
 
+#if you want to add something to the mainloop
 def extracode():
-    global i
-    i = i + 1
-    if i > 999999:
-        print "extra code"
-        i = 1
-    
+    pass   
+
+
 def handler(signum, frame):
     print "received SIGINT" 
     inotify.stoploop()
     exit(0)
 
+signal.signal(signal.SIGINT, handler) 
+
+
 for file in os.listdir("."): 
     fds[inotify.watch(file, inotify.IN_ALL_EVENTS)] = file 
 
-signal.signal(signal.SIGINT, handler) 
+#print pid
+print os.getpid()
+
 inotify.startloop(callback = print_info, extra=extracode)
 
