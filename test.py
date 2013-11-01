@@ -29,9 +29,8 @@ consts = {
 
 def print_info(event): 
     if event.mask not in event:
-        return
-    else:
         print "ignore event", event.mask 
+        return 
     if event.wd in fds:
         print "file:%s\twd:%d\t%s" % (fds[event.wd], event.wd, consts[event.mask] )
 
