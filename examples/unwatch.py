@@ -3,8 +3,6 @@
 import signal
 import inotify
 
-
-
 def handler(signum, frame):
     print "received SIGINT"
     inotify.stoploop()

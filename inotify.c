@@ -162,8 +162,9 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 	int mfds = 0;
 	int m = 0;
 	int n = 0; 
-	int timeout = 100;
-	PyObject *block = NULL; 
+	int block = 0;
+	int timeout = 100; 
+	PyObject *block_tmp = NULL; 
 	PyObject *cb = NULL;
 	PyObject *extra = NULL; 
 	struct epoll_event ev; 
@@ -172,7 +173,7 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 
 	if (PyArg_ParseTupleAndKeywords(args, kwargs, "O|OIO:startloop",
 				kwlist, &cb, &extra, &timeout, 
-				&block)) { 
+				&block_tmp)) { 
 		if (!PyCallable_Check(cb)) {
 			PyErr_SetString(PyExc_TypeError,
 					"extra should be a callable "
@@ -187,10 +188,16 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 				return NULL;
 			}
 		} 
-		if (!PyBool_Check(block)) {
-			PyErr_SetString(PyExc_TypeError,
-					"block should be a boolean");
+		if (block_tmp) {
+			if (!PyBool_Check(block_tmp)) {
+				PyErr_SetString(PyExc_TypeError,
+						"block should be a boolean");
+			}
+			block = PyInt_AsLong(block_tmp);
+		} else {
+			block = 1;
 		}
+
 		Py_XINCREF(cb);
 		Py_XDECREF(notify_callback);
 		notify_callback = cb;
