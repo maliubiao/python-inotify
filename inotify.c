@@ -15,6 +15,7 @@ int epoll_fd = 0;
 int event_size = 0; 
 void *inotify_buffer = NULL; 
 int stoploop = 0; 
+int restore_loop = 0;
 PyObject *notify_callback = NULL; 
 
 
@@ -114,7 +115,7 @@ inotify_watch(PyObject *object, PyObject *args)
 	if (PyErr_Occurred()) {
 		return NULL;
 	}
-	return (PyObject *)PyInt_FromLong(tmp); 
+	return PyInt_FromLong(tmp); 
 }
 
 
@@ -133,15 +134,8 @@ inotify_unwatch(PyObject *object, PyObject *args)
 		return NULL; 
 
 	if(inotify_fd == 0) {
-		tmp = inotify_init1(IN_NONBLOCK);	
-		if (tmp > 0) {
-			inotify_fd = tmp;
-		}
-		else { 
-			PyErr_SetString(PyExc_RuntimeError,
-				"init inotify instance failed");
-			return NULL;
-		} 
+		PyErr_SetString(PyExc_OSError, 
+				"bug report: inotify has not initialized yet"); 
 	} 
 
 	tmp = inotify_rm_watch(inotify_fd, wd);	
@@ -166,22 +160,22 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 {
 	int tmp = 0;
 	int mfds = 0;
-	int m;
-	int n=0;
-	struct epoll_event ev; 
+	int m = 0;
+	int n = 0; 
+	int timeout = 100;
+	PyObject *block = NULL; 
 	PyObject *cb = NULL;
 	PyObject *extra = NULL; 
-	struct timespec req;
-	req.tv_sec = 0;
-	req.tv_nsec = 100000; //100ms
-	static char *kwlist[] = {"callback", "extra", 0};
+	struct epoll_event ev; 
 
-	if (PyArg_ParseTupleAndKeywords(args, kwargs, "O|O:startloop",
-				kwlist, &cb, &extra)) {
-				
+	static char *kwlist[] = {"callback", "extra", "timeout", "block", 0};
+
+	if (PyArg_ParseTupleAndKeywords(args, kwargs, "O|OIO:startloop",
+				kwlist, &cb, &extra, &timeout, 
+				&block)) { 
 		if (!PyCallable_Check(cb)) {
 			PyErr_SetString(PyExc_TypeError,
-					"parameter should be a callable "
+					"extra should be a callable "
 					"object");
 			return NULL;
 		} 
@@ -192,15 +186,18 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 						"a callable object");
 				return NULL;
 			}
+		} 
+		if (!PyBool_Check(block)) {
+			PyErr_SetString(PyExc_TypeError,
+					"block should be a boolean");
 		}
-
 		Py_XINCREF(cb);
 		Py_XDECREF(notify_callback);
 		notify_callback = cb;
+
 	} else {
 		return NULL;
-	}
-	
+	} 
 
 	if(inotify_fd == 0) {
 		tmp = inotify_init1(IN_NONBLOCK);	
@@ -225,23 +222,20 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 			return NULL; 
 		} 
 	} 
-
-
-	tmp = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, inotify_fd, &ev);
-	if(tmp < 0) {
-		PyErr_SetFromErrno(PyExc_OSError);
-		return NULL; 
-
-	} 
-	stoploop = 1;
+	if (!restore_loop) { 
+		tmp = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, inotify_fd, &ev);
+		if(tmp < 0) {
+			PyErr_SetFromErrno(PyExc_OSError);
+			return NULL; 
+		} 
+		stoploop = 1;
+	}
 
 	while(1) {
-		if (stoploop == 0) {
-			close(epoll_fd);
-			epoll_fd = 0;
+		if (stoploop == 0) { 
 			Py_RETURN_NONE;
 		}
-		mfds = epoll_wait(epoll_fd, epoll_event, 10, 10);
+		mfds = epoll_wait(epoll_fd, epoll_event, 100, timeout);
 		if (mfds < 0) {
 			PyErr_SetFromErrno(PyExc_OSError);
 			return NULL;
@@ -260,15 +254,16 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 				return NULL;
 			}	
 		} 
-
-		if (extra) 
+		if (extra) { 
 			PyObject_CallObject(extra, NULL); 
-
-		m = 0;
-		nanosleep(&req, NULL);
-		
+		} 
+		if (!block) {
+			restore_loop = 1;
+			break;
+		}
+		m = 0; 
 	}
-	Py_RETURN_TRUE;
+	Py_RETURN_NONE;
 	
 }
 
@@ -285,6 +280,7 @@ inotify_stoploop(PyObject *object, PyObject *args)
 	close(inotify_fd);
 	epoll_fd = 0;
 	inotify_fd = 0; 
+	restore_loop = 0;
 	Py_RETURN_NONE;
 }
 

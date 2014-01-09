@@ -12,21 +12,17 @@ def handler(signum, frame):
 
 signal.signal(signal.SIGINT, handler)
 
-i = 1
+i = 0
 
 def response(event):
     '''unwatch after 5 event''' 
     global i 
     print "event",i
-    if i > 4: 
-        #if we receive more than one event in the same time.
-        try:
-            inotify.unwatch(event.wd) 
-        except OSError:
-            pass 
-        i = 0
-
     i = i + 1
+    if i > 4: 
+        inotify.unwatch(event.wd) 
+        i = 0 
+
 
 
 inotify.watch("example", inotify.IN_ALL_EVENTS)

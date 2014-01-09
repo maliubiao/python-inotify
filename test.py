@@ -28,7 +28,7 @@ consts = {
 } 
 
 def print_info(event): 
-    if event.mask not in event:
+    if event.mask not in consts:
         print "ignore event", event.mask 
         return 
     if event.wd in fds:
@@ -50,8 +50,11 @@ signal.signal(signal.SIGINT, handler)
 for file in os.listdir("."): 
     fds[inotify.watch(file, inotify.IN_ALL_EVENTS)] = file 
 
-#print pid
-print os.getpid()
 
-inotify.startloop(callback = print_info, extra=extracode)
-
+#nonblock
+while True:
+    inotify.startloop(callback = print_info, timeout=100, block=False) 
+"""
+#block
+inotify.startloop(callback = print_info, extra=extracode, timeout=100, block=True)
+"""
