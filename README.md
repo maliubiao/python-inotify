@@ -70,15 +70,15 @@ inotify.startloop(callback = print_info, extra=extracode, timeout=100, block=Tru
 ```
 ##API
 ###startloop(callback, extra=func, timeout=100, block=True)
-#####Start the main loop, callback is a function with only one parameter event, there are five members in event, only two: mask and wd are valid so far.
-#####wd is the identifier returned by inotify.watch, use mask & const in intoify to decide which event is triggered
+Start the main loop, callback is a function with only one parameter event, there are five members in event, only two: mask and wd are valid so far.
+wd is the identifier returned by inotify.watch, use mask & const in intoify to decide which event is triggered
 ###stoploop()
-####Stop the main loop, release resources, this must be done if you don't use inotify anymore.
+Stop the main loop, release resources, this must be done if you don't use inotify anymore.
 ###watch(path, mask)
-####Path is the path of the file you want to watch, mask decides what kind event you want to receive, eg: inotify.IN_MODIFY | intoify.IN_OPEN. 
-####This function returns a identifier
+Path is the path of the file you want to watch, mask decides what kind event you want to receive, eg: inotify.IN_MODIFY | intoify.IN_OPEN. 
+This function returns a identifier
 ###unwatch(identifier) 
-####Don't watch a file anymore.
+Don't watch a file anymore.
 ## Examples
     
     see examples/ 
