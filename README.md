@@ -37,8 +37,8 @@ consts = {
 } 
 
 def print_info(event): 
-    if event.mask not in event:
-    	print "ignore event", event.mask
+    if event.mask not in consts:
+        print "ignore event", event.mask 
         return 
     if event.wd in fds:
         print "file:%s\twd:%d\t%s" % (fds[event.wd], event.wd, consts[event.mask] )
@@ -48,21 +48,25 @@ def extracode():
     pass   
 
 
-def handler(signum, frame): 
+def handler(signum, frame):
     print "received SIGINT" 
     inotify.stoploop()
     exit(0)
 
 signal.signal(signal.SIGINT, handler) 
 
-#watch all files in current directory.
+
 for file in os.listdir("."): 
     fds[inotify.watch(file, inotify.IN_ALL_EVENTS)] = file 
 
-#print pid
-print os.getpid()
 
-inotify.startloop(callback = print_info, extra=extracode)
+#nonblock
+while True:
+    inotify.startloop(callback = print_info, timeout=100, block=False) 
+"""
+#block
+inotify.startloop(callback = print_info, extra=extracode, timeout=100, block=True)
+"""
 ```
 
 ## Examples
