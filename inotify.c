@@ -248,6 +248,7 @@ inotify_startloop(PyObject *object, PyObject *args, PyObject *kwargs)
 			return NULL;
 		}
 		for (m=0; m < mfds; ++m) {
+			errno = 0;
 			n = read(inotify_fd, inotify_buffer, event_size);
 			if (errno == EAGAIN)
 				continue;
