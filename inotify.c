@@ -97,8 +97,7 @@ inotify_watch(PyObject *object, PyObject *args)
 		if (tmp > 0) {
 			inotify_fd = tmp;
 		} else { 
-			PyErr_SetString(PyExc_RuntimeError,
-				"init inotify instance failed");
+			PyErr_SetFromErrno(PyExc_OSError); 
 			return NULL;
 		} 
 	} 
