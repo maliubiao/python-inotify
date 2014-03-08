@@ -87,46 +87,7 @@ inotify_read_event(PyObject *object, PyObject *args)
 		goto failed;	
 	}
 
-<<<<<<< HEAD
 	ret = read(fd, event, sizeof(*event)); 
-=======
-	while(1) {
-		if (stoploop == 0) { 
-			Py_RETURN_NONE;
-		}
-		mfds = epoll_wait(epoll_fd, epoll_event, 100, timeout);
-		if (mfds < 0) {
-			PyErr_SetFromErrno(PyExc_OSError);
-			return NULL;
-		}
-		for (m=0; m < mfds; ++m) {
-			errno = 0;
-			n = read(inotify_fd, inotify_buffer, event_size);
-			if (errno == EAGAIN)
-				continue;
-			if (n < 0) {
-				PyErr_SetFromErrno(PyExc_OSError);
-				return NULL;
-			}
-			if (notify_client((struct inotify_event *)\
-						inotify_buffer) < 0\
-					) {
-				return NULL;
-			}	
-		} 
-		if (extra) { 
-			PyObject_CallObject(extra, NULL); 
-		} 
-		if (!block) {
-			restore_loop = 1;
-			break;
-		}
-		m = 0; 
-	}
-	Py_RETURN_NONE;
-	
-}
->>>>>>> 76ebaf22d5abc52597179c9cdae903844cf17eb7
 
 	if (ret != sizeof(*event)) { 
 		goto failed; 
