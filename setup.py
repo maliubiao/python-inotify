@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 from distutils.core import setup, Extension
 
-m = Extension('inotify',
+m = Extension('_inotify',
         sources = ['inotify.c'] 
         )
 

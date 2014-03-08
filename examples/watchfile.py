@@ -1,37 +1,43 @@
 if __name__ == "__main__":
-    import inotify 
+    import _inotify 
     import sys
+    import time
     if len(sys.argv) < 2:
         print("require a file.")
         exit()
 
     target = sys.argv[1]
     consts = {
-            inotify.IN_ACCESS: "File was accessed (read)",
-            inotify.IN_ATTRIB: "Metadata changed ",
-            inotify.IN_CLOSE_WRITE: "File opened for writing was closed",
-            inotify.IN_CLOSE_NOWRITE: "File not opened for writing was closed",  
-            inotify.IN_CREATE: "File/directory created in wached directory",
-            inotify.IN_DELETE: "File/directory deleted from watched directory",
-            inotify.IN_DELETE_SELF: "Watched file/directory was itself deleted",
-            inotify.IN_MODIFY: "File was modified",
-            inotify.IN_MOVE_SELF: "Watched file/directory was itself moved",
-            inotify.IN_MOVED_FROM: "File moved out of watched directory",
-            inotify.IN_MOVED_TO: "File moved into watched directory",
-            inotify.IN_OPEN: "File was opened",
-            inotify.IN_IGNORED: "Watch was removed explictily",
-            inotify.IN_ISDIR: "Subject of this event is a directory",
-            inotify.IN_Q_OVERFLOW: "Event queue overflowed",
-            inotify.IN_UNMOUNT: "File system containing watched object was unmounted",
-            inotify.IN_IGNORED: "Watch was removed explictly or automatically",
-            inotify.IN_ISDIR: "Subject of this event is a directory",
-            inotify.IN_Q_OVERFLOW: "Event queue overflowed",
-            inotify.IN_UNMOUNT: "File system containing watched object was unmounted"
+            _inotify.ACCESS: "File was accessed (read)",
+            _inotify.ATTRIB: "Metadata changed ",
+            _inotify.CLOSE_WRITE: "File opened for writing was closed",
+            _inotify.CLOSE_NOWRITE: "File not opened for writing was closed",  
+            _inotify.CREATE: "File/directory created in wached directory",
+            _inotify.DELETE: "File/directory deleted from watched directory",
+            _inotify.DELETE_SELF: "Watched file/directory was itself deleted",
+            _inotify.MODIFY: "File was modified",
+            _inotify.MOVE_SELF: "Watched file/directory was itself moved",
+            _inotify.MOVED_FROM: "File moved out of watched directory",
+            _inotify.MOVED_TO: "File moved into watched directory",
+            _inotify.OPEN: "File was opened",
+            _inotify.IGNORED: "Watch was removed explictily",
+            _inotify.ISDIR: "Subject of this event is a directory",
+            _inotify.Q_OVERFLOW: "Event queue overflowed",
+            _inotify.UNMOUNT: "File system containing watched object was unmounted",
+            _inotify.IGNORED: "Watch was removed explictly or automatically",
+            _inotify.ISDIR: "Subject of this event is a directory",
+            _inotify.Q_OVERFLOW: "Event queue overflowed",
+            _inotify.UNMOUNT: "File system containing watched object was unmounted"
     } 
             
     def callback(event): 
-        if event.mask in consts:
-            print("%s: %s" %(target, consts[event.mask]))
+        mask = event["mask"]
+        for k, v in consts.items():
+            if mask & k: 
+                print("%s: %s" % (target, v)) 
 
-    inotify.watch(target, inotify.IN_ALL_EVENTS)    
-    inotify.startloop(callback = callback)
+    fd = _inotify.create()
+    wd = _inotify.add(fd, target, _inotify.ALL_EVENTS)
+    while True:
+        time.sleep(0.1)
+        _inotify.read_event(fd, callback) 

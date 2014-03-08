@@ -1,7 +1,7 @@
 #! /usr/bin/python
 
-import signal
-import inotify
+import time
+import _inotify
 
 
 def on_write(event):
@@ -32,45 +32,42 @@ def on_delete(event):
     print("delete")
 
 """ 
-inotify.IN_MOVE = inotify.IN_MOVED_FROM | inotify.MOVED_TO
-inotify.IN_CLOSE = inotify.IN_CLOSE_WRITE | inotify.IN_CLOSE_NOWRITE
+_inotify.MOVE = _inotify.MOVED_FROM | _inotify.MOVED_TO
+_inotify.CLOSE = _inotify.CLOSE_WRITE | _inotify.CLOSE_NOWRITE
 
-inotify.IN_MOVE, IN_MOVED_FROM, IN_MOVED_TO, IN_DELETE
-IN_CREATE are  directory only masks
-inotify.IN_ACCESS, IN_MODIFY, IN_OPEN, IN_CLOSE,
-IN_CLOSE_WRITE, IN_CLOSE_NOWRITE are file only masks.
+_inotify.MOVE, MOVED_FROM, MOVED_TO, DELETE
+CREATE are  directory only masks
+_inotify.ACCESS, MODIFY, OPEN, CLOSE,
+CLOSE_WRITE, CLOSE_NOWRITE are file only masks.
 """
 
 def response(event): 
-    mask = event.mask
-    if mask & inotify.IN_ACCESS:
+    mask = event['mask']
+    if mask & _inotify.ACCESS:
         on_read(event)
-    elif mask & inotify.IN_MODIFY:
+    elif mask & _inotify.MODIFY:
         on_write(event)
-    elif mask & inotify.IN_ATTRIB:
+    elif mask & _inotify.ATTRIB:
         on_attrib(event)
-    elif mask & inotify.IN_OPEN:
+    elif mask & _inotify.OPEN:
         on_open(event)
-    elif mask & inotify.IN_CLOSE:
+    elif mask & _inotify.CLOSE:
         on_close(event) 
-    elif mask & inotify.IN_MOVE:
+    elif mask & _inotify.MOVE:
         on_move(event)
-    elif mask & inotify.IN_DELETE_SELF:
+    elif mask & _inotify.DELETE_SELF:
         on_delete_self(event)
-    elif mask & inotify.IN_DELETE:
+    elif mask & _inotify.DELETE:
         on_delete(event)
-    elif mask & inotify.IN_CREATE:
+    elif mask & _inotify.CREATE:
         on_create(event)
     
 
-def handler(signum, frame):
-    print "received SIGINT"
-    inotify.stoploop()
-    exit(0)
+fd = _inotify.create()
+wd = _inotify.add(fd, "example", _inotify.ALL_EVENTS) 
 
-signal.signal(signal.SIGINT, handler)
+while True:
+    time.sleep(0.5)
+    _inotify.read_event(fd, response)
 
-inotify.watch("example", inotify.IN_ALL_EVENTS) 
-
-inotify.startloop(response)
 
