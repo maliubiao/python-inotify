@@ -4,6 +4,18 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 
+#ifndef IN_CLOEXEC
+#  define IN_CLOEXEC O_CLOEXEC
+#  define EMULATE_IN_CLOEXEC
+/* inotify_init1 was added to the Linux kernel at the same time as
+   IN_CLOEXEC, so we'll need to emulate that too.  */
+#  define EMULATE_INOTIFY_INIT1
+#endif
+#ifndef IN_NONBLOCK
+#  define IN_NONBLOCK O_NONBLOCK
+#  define EMULATE_IN_NONBLOCK
+#endif
+
 PyDoc_STRVAR(inotify_create_doc, "initializes a new inotify instance and returns a file descriptor associated with a new inotify event queue");
 
 static PyObject *
@@ -14,11 +26,36 @@ inotify_create(PyObject *object, PyObject *args)
 	if (!PyArg_ParseTuple(args, ":k", &flags)) {
 		return NULL;
 	}
+#ifdef EMULATE_INOTIFY_INIT1
+	ret = inotify_init();
+#else
 	ret = inotify_init1(flags);
+#endif
 	if (ret < 0) {
 		PyErr_SetFromErrno(PyExc_OSError);
 		return NULL;
 	}
+
+#if defined(EMULATE_INOTIFY_INIT1) || defined(EMULATE_IN_CLOEXEC) || defined(EMULATE_IN_NONBLOCK)
+	if ( flags != 0 ) {
+		/* Don't assume that the IN_* flags that can be passed to
+		   `inotify_init1` are compatible with those used by `fcntl`;
+		   instead, map them explicitly. */
+
+		/* fetch current flags */
+		int descriptor_flags = fcntl(ret, F_GETFD, 0);
+#  ifdef EMULATE_IN_CLOEXEC
+		if ( flags & IN_CLOEXEC )
+			descriptor_flags |= FD_CLOEXEC;
+#  endif
+#  ifdef EMULATE_IN_NONBLOCK
+		if ( flags & IN_NONBLOCK )
+			descriptor_flags |= O_NONBLOCK;
+#  endif
+		fcntl(ret, F_SETFD, descriptor_flags);
+	}
+#endif
+
 	return PyInt_FromLong(ret); 
 }
 
@@ -180,7 +217,6 @@ PyMODINIT_FUNC init_inotify(void)
 	/* Supported events suitable for MASK parameter of INOTIFY_ADD_WATCH*/
 	OBJECT_ADD_ULONG(m, "ACCESS", IN_ACCESS);	
 	OBJECT_ADD_ULONG(m, "ATTRIB", IN_ATTRIB); 
-	OBJECT_ADD_ULONG(m, "CLOSE_EXEC", IN_CLOEXEC);
 	OBJECT_ADD_ULONG(m, "CLOSE_WRITE", IN_CLOSE_WRITE);
 	OBJECT_ADD_ULONG(m, "CLOSE_NOWRITE", IN_CLOSE_NOWRITE);
 	OBJECT_ADD_ULONG(m, "CREATE", IN_CREATE);
@@ -197,7 +233,9 @@ PyMODINIT_FUNC init_inotify(void)
 	OBJECT_ADD_ULONG(m, "MOVE", IN_MOVE);
 	/* Special flags */ 
 	OBJECT_ADD_ULONG(m, "DONT_FOLLOW", IN_DONT_FOLLOW);
+#ifdef IN_EXCL_UNLINK
 	OBJECT_ADD_ULONG(m, "EXCL_UNLINK", IN_EXCL_UNLINK);
+#endif
 	OBJECT_ADD_ULONG(m, "MASK_ADD", IN_MASK_ADD);
 	OBJECT_ADD_ULONG(m, "ONESHOT", IN_ONESHOT);
 	OBJECT_ADD_ULONG(m, "ONLYDIR", IN_ONLYDIR);
@@ -205,6 +243,10 @@ PyMODINIT_FUNC init_inotify(void)
 	OBJECT_ADD_ULONG(m, "ISDIR", IN_ISDIR);
 	OBJECT_ADD_ULONG(m, "Q_OVERFLOW", IN_Q_OVERFLOW);
 	OBJECT_ADD_ULONG(m, "UNMOUNT", IN_UNMOUNT);
+
+        /* inotify_init1 flags */
+        OBJECT_ADD_ULONG(m, "CLOEXEC", IN_CLOEXEC);
+        OBJECT_ADD_ULONG(m, "NONBLOCK", IN_NONBLOCK);
 #undef OBJECT_ADD_ULONG
 	}
 }
