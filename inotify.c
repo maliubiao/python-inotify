@@ -1,6 +1,8 @@
 #include <Python.h>
 #include <sys/inotify.h>
 #include <sys/epoll.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
 
 PyDoc_STRVAR(inotify_create_doc, "initializes a new inotify instance and returns a file descriptor associated with a new inotify event queue");
 
@@ -62,18 +64,27 @@ inotify_rm(PyObject *object, PyObject *args)
 	Py_RETURN_NONE;
 }
 
-PyDoc_STRVAR(inotify_read_event_doc, "read event from inotify fd");
+PyDoc_STRVAR(inotify_read_event_doc,
+"read_event(fd, callback[, TIMEOUT])\n\
+\n\
+Read one or more event(s) from an inotify file descriptor.  Without a timeout,\n\
+blocks until an event becomes available; when a floating-point value is given\n\
+for TIMEOUT, waits up to that many seconds for an event to become available.");
 
 static PyObject *
 inotify_read_event(PyObject *object, PyObject *args)
-{ 
-	int fd; 
-	int ret; 
+{
+	int fd = -1;
+	int ret;
+	fd_set set;
+	float timeout_arg = -1;
+	struct timeval timeout = { 0, 0 };
+	char* buffer = NULL;
+	unsigned int avail;
 	PyObject *callback;
-	PyObject *event_dict; 
-	struct inotify_event *event;
+	PyObject *event_dict;
 
-	if (!PyArg_ParseTuple(args, "IO", &fd, &callback)) {
+	if (!PyArg_ParseTuple(args, "IO|f", &fd, &callback, &timeout_arg)) {
 		return NULL;
 	}
 
@@ -82,35 +93,66 @@ inotify_read_event(PyObject *object, PyObject *args)
 		return NULL;
 	} 
 
-	event = PyMem_Malloc(sizeof(*event) + 513);
-	if (!event) {
-		goto failed;	
+	if ( timeout_arg > 0 ) {
+	    /* Convert floating-point timeout value to `struct timeval`. */
+	    float timeout_fraction = fmodf(timeout_arg, 1.0f);
+	    timeout.tv_sec = (long int) (timeout_arg - timeout_fraction);
+	    timeout.tv_usec = (long int) (timeout_fraction * 1000000);
 	}
 
-	ret = read(fd, event, sizeof(*event)); 
+	/* Wait for one or more events to become available. */
+	FD_ZERO(&set);
+	FD_SET(fd, &set);
 
-	if (ret != sizeof(*event)) { 
-		goto failed; 
+	if ( timeout_arg > 0 ) {
+	    ret = select(FD_SETSIZE, &set, NULL, NULL, &timeout);
+	} else {
+	    ret = select(FD_SETSIZE, &set, NULL, NULL, NULL);
 	}
 
-	/* callback args */
-	event_dict = PyDict_New();
-	PyDict_SetItemString(event_dict, "wd", PyInt_FromLong(event->wd));
-	PyDict_SetItemString(event_dict, "mask", PyLong_FromUnsignedLong(event->mask));
-	PyDict_SetItemString(event_dict, "cookie", PyLong_FromUnsignedLong(event->cookie));
-	PyDict_SetItemString(event_dict, "len", PyLong_FromUnsignedLong(event->len));
-	PyDict_SetItemString(event_dict, "name", PyString_FromString(event->name)); 
+	if ( ret < 0 ) {
+	    goto failed;
+	} else if ( ret > 0 ) {
+	    /* Find out how many bytes are in the queue. */
+	    if ( ioctl(fd, FIONREAD, &avail) < 0 ) {
+		goto failed;
+	    }
 
-	PyMem_Free(event);
-	/* invoke callback, ignore ret */
-	PyObject_CallFunction(callback, "(O)", event_dict);
-	
-	Py_XDECREF(event_dict); 
+	    /* Read all available events. */
+	    if ( ! (buffer = PyMem_Malloc(avail)) ) {
+		goto failed;
+	    }
+	    if ( read(fd, buffer, avail) < 0 ) {
+		goto failed;
+	    }
 
+	    /* Dispatch the handler for each event. */
+	    int offset = 0;
+	    while (offset < avail) {
+		struct inotify_event *event = (struct inotify_event*)(buffer + offset);
+
+		event_dict = PyDict_New();
+		PyDict_SetItemString(event_dict, "wd", PyInt_FromLong(event->wd));
+		PyDict_SetItemString(event_dict, "mask", PyLong_FromUnsignedLong(event->mask));
+		PyDict_SetItemString(event_dict, "cookie", PyLong_FromUnsignedLong(event->cookie));
+		PyDict_SetItemString(event_dict, "len", PyLong_FromUnsignedLong(event->len));
+		PyDict_SetItemString(event_dict, "name", PyString_FromString(event->name));
+
+		PyObject_CallFunction(callback, "(O)", event_dict);
+
+		Py_XDECREF(event_dict);
+
+		offset = offset + sizeof(struct inotify_event) + event->len;
+	    }
+
+	    PyMem_Free(buffer);
+	}
 	Py_RETURN_NONE; 
 
 failed:
-	PyMem_Free(event);
+	if ( buffer ) {
+	    PyMem_Free(buffer);
+	}
 	PyErr_SetFromErrno(PyExc_OSError);
 	return NULL; 
 	
