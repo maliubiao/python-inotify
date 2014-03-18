@@ -1,6 +1,20 @@
 #include <Python.h>
 #include <sys/inotify.h>
 #include <sys/epoll.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+
+#ifndef IN_CLOEXEC
+#  define IN_CLOEXEC O_CLOEXEC
+#  define EMULATE_IN_CLOEXEC
+/* inotify_init1 was added to the Linux kernel at the same time as
+   IN_CLOEXEC, so we'll need to emulate that too.  */
+#  define EMULATE_INOTIFY_INIT1
+#endif
+#ifndef IN_NONBLOCK
+#  define IN_NONBLOCK O_NONBLOCK
+#  define EMULATE_IN_NONBLOCK
+#endif
 
 PyDoc_STRVAR(inotify_create_doc, "initializes a new inotify instance and returns a file descriptor associated with a new inotify event queue");
 
@@ -12,11 +26,36 @@ inotify_create(PyObject *object, PyObject *args)
 	if (!PyArg_ParseTuple(args, ":k", &flags)) {
 		return NULL;
 	}
+#ifdef EMULATE_INOTIFY_INIT1
+	ret = inotify_init();
+#else
 	ret = inotify_init1(flags);
+#endif
 	if (ret < 0) {
 		PyErr_SetFromErrno(PyExc_OSError);
 		return NULL;
 	}
+
+#if defined(EMULATE_INOTIFY_INIT1) || defined(EMULATE_IN_CLOEXEC) || defined(EMULATE_IN_NONBLOCK)
+	if ( flags != 0 ) {
+		/* Don't assume that the IN_* flags that can be passed to
+		   `inotify_init1` are compatible with those used by `fcntl`;
+		   instead, map them explicitly. */
+
+		/* fetch current flags */
+		int descriptor_flags = fcntl(ret, F_GETFD, 0);
+#  ifdef EMULATE_IN_CLOEXEC
+		if ( flags & IN_CLOEXEC )
+			descriptor_flags |= FD_CLOEXEC;
+#  endif
+#  ifdef EMULATE_IN_NONBLOCK
+		if ( flags & IN_NONBLOCK )
+			descriptor_flags |= O_NONBLOCK;
+#  endif
+		fcntl(ret, F_SETFD, descriptor_flags);
+	}
+#endif
+
 	return PyInt_FromLong(ret); 
 }
 
@@ -62,18 +101,27 @@ inotify_rm(PyObject *object, PyObject *args)
 	Py_RETURN_NONE;
 }
 
-PyDoc_STRVAR(inotify_read_event_doc, "read event from inotify fd");
+PyDoc_STRVAR(inotify_read_event_doc,
+"read_event(fd, callback[, TIMEOUT])\n\
+\n\
+Read one or more event(s) from an inotify file descriptor.  Without a timeout,\n\
+blocks until an event becomes available; when a floating-point value is given\n\
+for TIMEOUT, waits up to that many seconds for an event to become available.");
 
 static PyObject *
 inotify_read_event(PyObject *object, PyObject *args)
-{ 
-	int fd; 
-	int ret; 
+{
+	int fd = -1;
+	int ret;
+	fd_set set;
+	float timeout_arg = -1;
+	struct timeval timeout = { 0, 0 };
+	char* buffer = NULL;
+	unsigned int avail;
 	PyObject *callback;
-	PyObject *event_dict; 
-	struct inotify_event *event;
+	PyObject *event_dict;
 
-	if (!PyArg_ParseTuple(args, "IO", &fd, &callback)) {
+	if (!PyArg_ParseTuple(args, "IO|f", &fd, &callback, &timeout_arg)) {
 		return NULL;
 	}
 
@@ -82,35 +130,66 @@ inotify_read_event(PyObject *object, PyObject *args)
 		return NULL;
 	} 
 
-	event = PyMem_Malloc(sizeof(*event) + 513);
-	if (!event) {
-		goto failed;	
+	if ( timeout_arg > 0 ) {
+	    /* Convert floating-point timeout value to `struct timeval`. */
+	    float timeout_fraction = fmodf(timeout_arg, 1.0f);
+	    timeout.tv_sec = (long int) (timeout_arg - timeout_fraction);
+	    timeout.tv_usec = (long int) (timeout_fraction * 1000000);
 	}
 
-	ret = read(fd, event, sizeof(*event)); 
+	/* Wait for one or more events to become available. */
+	FD_ZERO(&set);
+	FD_SET(fd, &set);
 
-	if (ret != sizeof(*event)) { 
-		goto failed; 
+	if ( timeout_arg > 0 ) {
+	    ret = select(FD_SETSIZE, &set, NULL, NULL, &timeout);
+	} else {
+	    ret = select(FD_SETSIZE, &set, NULL, NULL, NULL);
 	}
 
-	/* callback args */
-	event_dict = PyDict_New();
-	PyDict_SetItemString(event_dict, "wd", PyInt_FromLong(event->wd));
-	PyDict_SetItemString(event_dict, "mask", PyLong_FromUnsignedLong(event->mask));
-	PyDict_SetItemString(event_dict, "cookie", PyLong_FromUnsignedLong(event->cookie));
-	PyDict_SetItemString(event_dict, "len", PyLong_FromUnsignedLong(event->len));
-	PyDict_SetItemString(event_dict, "name", PyString_FromString(event->name)); 
+	if ( ret < 0 ) {
+	    goto failed;
+	} else if ( ret > 0 ) {
+	    /* Find out how many bytes are in the queue. */
+	    if ( ioctl(fd, FIONREAD, &avail) < 0 ) {
+		goto failed;
+	    }
 
-	PyMem_Free(event);
-	/* invoke callback, ignore ret */
-	PyObject_CallFunction(callback, "(O)", event_dict);
-	
-	Py_XDECREF(event_dict); 
+	    /* Read all available events. */
+	    if ( ! (buffer = PyMem_Malloc(avail)) ) {
+		goto failed;
+	    }
+	    if ( read(fd, buffer, avail) < 0 ) {
+		goto failed;
+	    }
 
+	    /* Dispatch the handler for each event. */
+	    int offset = 0;
+	    while (offset < avail) {
+		struct inotify_event *event = (struct inotify_event*)(buffer + offset);
+
+		event_dict = PyDict_New();
+		PyDict_SetItemString(event_dict, "wd", PyInt_FromLong(event->wd));
+		PyDict_SetItemString(event_dict, "mask", PyLong_FromUnsignedLong(event->mask));
+		PyDict_SetItemString(event_dict, "cookie", PyLong_FromUnsignedLong(event->cookie));
+		PyDict_SetItemString(event_dict, "len", PyLong_FromUnsignedLong(event->len));
+		PyDict_SetItemString(event_dict, "name", PyString_FromString(event->name));
+
+		PyObject_CallFunction(callback, "(O)", event_dict);
+
+		Py_XDECREF(event_dict);
+
+		offset = offset + sizeof(struct inotify_event) + event->len;
+	    }
+
+	    PyMem_Free(buffer);
+	}
 	Py_RETURN_NONE; 
 
 failed:
-	PyMem_Free(event);
+	if ( buffer ) {
+	    PyMem_Free(buffer);
+	}
 	PyErr_SetFromErrno(PyExc_OSError);
 	return NULL; 
 	
@@ -138,7 +217,6 @@ PyMODINIT_FUNC init_inotify(void)
 	/* Supported events suitable for MASK parameter of INOTIFY_ADD_WATCH*/
 	OBJECT_ADD_ULONG(m, "ACCESS", IN_ACCESS);	
 	OBJECT_ADD_ULONG(m, "ATTRIB", IN_ATTRIB); 
-	OBJECT_ADD_ULONG(m, "CLOSE_EXEC", IN_CLOEXEC);
 	OBJECT_ADD_ULONG(m, "CLOSE_WRITE", IN_CLOSE_WRITE);
 	OBJECT_ADD_ULONG(m, "CLOSE_NOWRITE", IN_CLOSE_NOWRITE);
 	OBJECT_ADD_ULONG(m, "CREATE", IN_CREATE);
@@ -155,14 +233,20 @@ PyMODINIT_FUNC init_inotify(void)
 	OBJECT_ADD_ULONG(m, "MOVE", IN_MOVE);
 	/* Special flags */ 
 	OBJECT_ADD_ULONG(m, "DONT_FOLLOW", IN_DONT_FOLLOW);
+#ifdef IN_EXCL_UNLINK
 	OBJECT_ADD_ULONG(m, "EXCL_UNLINK", IN_EXCL_UNLINK);
+#endif
 	OBJECT_ADD_ULONG(m, "MASK_ADD", IN_MASK_ADD);
-	OBJECT_ADD_ULONG(m, "IN_ONESHOT", IN_ONESHOT);
-	OBJECT_ADD_ULONG(m, "IN_ONLYDIR", IN_ONLYDIR);
+	OBJECT_ADD_ULONG(m, "ONESHOT", IN_ONESHOT);
+	OBJECT_ADD_ULONG(m, "ONLYDIR", IN_ONLYDIR);
 	OBJECT_ADD_ULONG(m, "IGNORED", IN_IGNORED);
 	OBJECT_ADD_ULONG(m, "ISDIR", IN_ISDIR);
 	OBJECT_ADD_ULONG(m, "Q_OVERFLOW", IN_Q_OVERFLOW);
 	OBJECT_ADD_ULONG(m, "UNMOUNT", IN_UNMOUNT);
+
+        /* inotify_init1 flags */
+        OBJECT_ADD_ULONG(m, "CLOEXEC", IN_CLOEXEC);
+        OBJECT_ADD_ULONG(m, "NONBLOCK", IN_NONBLOCK);
 #undef OBJECT_ADD_ULONG
 	}
 }
